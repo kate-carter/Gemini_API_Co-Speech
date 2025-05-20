@@ -1,4 +1,4 @@
-# Co-Speech Gesture Analysis with Gemini API
+# Co-Speech Gesture Analysis with Gemini API 
 
 This project analyzes co-speech gestures in videos using the Google Gemini API and generates a formatted Word document with the analysis.
 
@@ -25,14 +25,26 @@ Run the script:
 ```bash
 python gesture_analysis_doc.py
 ```
+or 
+```bash
+python APIScript.py
+```
 
-The script will:
+The script ```gesture_analysis_doc.py``` will:
 1. Process each video through the Gemini API
 2. Generate a Word document with:
    - Analysis of each gesture
    - Bold formatting for key terms
    - Both parsed analysis and raw response
 3. Save the document in your specified output directory
+
+The script ```APIScript.py``` will:
+1. Process each video through the Gemini API
+2. Populate the raw responses in terminal
+
+## Input Format
+- .mp4 video
+- one actor performing 1-2 gestures (with one main or target gesture)
 
 ## Output Format
 
