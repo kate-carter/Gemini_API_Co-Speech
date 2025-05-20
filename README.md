@@ -48,4 +48,5 @@ The generated Word document includes:
 
 - The script handles both numbered list formats (1. and 2. or 1) and 2))
 - Text surrounded by **asterisks** will be formatted as bold
-- Make sure your videos are accessible and in a supported format 
+- Make sure your videos are accessible and in a supported format
+- This code was created by Kate Carter and debugged using Cursor for the Distributed Little Red Hen Lab
