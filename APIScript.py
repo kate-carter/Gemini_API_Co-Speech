@@ -129,11 +129,11 @@ if __name__ == "__main__":
     # ]
     # For testing, use short and small video files.
     videos_to_analyze = [
-        "/Users/Kate/Documents/CWRU/RedHen/fulldatasetellen/30videos_vivitanno/11-11-1_shrug.mp4",
-        "/Users/Kate/Documents/CWRU/RedHen/fulldatasetellen/30videos_vivitanno/11-11-2_twohandbeat.mp4",
-        "/Users/Kate/Documents/CWRU/RedHen/fulldatasetellen/30videos_vivitanno/11-11-3_objloc(proximal).mp4",
-        "/Users/Kate/Documents/CWRU/RedHen/fulldatasetellen/30videos_vivitanno/11-11-4_from(head).mp4",
-        "/Users/Kate/Documents/CWRU/RedHen/fulldatasetellen/30videos_vivitanno/11-11-5_iconic(progression).mp4"
+        "/path/to/video1.mp4",
+        "/path/to/video2.mp4"",
+        "/path/to/video3.mp4"",
+        "/path/to/video4.mp4"",
+        "/path/to/video5.mp4""
     ]
 
     if not videos_to_analyze:
