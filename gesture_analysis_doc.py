@@ -1,16 +1,8 @@
-import google.generativeai as genai
-import os
-import time
-from docx import Document
-from docx.shared import Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from datetime import datetime
-import re
 
 # --- Configuration ---
 MODEL_NAME = "gemini-2.0-flash-001"
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")  # Set this in your environment
-OUTPUT_DIR = "path/to/output/directory"  # Replace with your desired output directory
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+OUTPUT_DIR = "/Users/Kate/Documents/CWRU/RedHen/GeminiOutput"
 
 def format_text_with_bold(paragraph, text):
     """
@@ -33,6 +25,56 @@ def format_text_with_bold(paragraph, text):
             # Add as normal text
             paragraph.add_run(part)
 
+def format_time(seconds):
+    """
+    Format time in seconds to a human-readable string.
+    
+    Args:
+        seconds (float): Time in seconds
+        
+    Returns:
+        str: Formatted time string
+    """
+    if seconds < 60:
+        return f"{seconds:.1f} seconds"
+    else:
+        minutes = int(seconds // 60)
+        remaining_seconds = seconds % 60
+        return f"{minutes} minutes and {remaining_seconds:.1f} seconds"
+
+def get_video_duration(video_path):
+    """
+    Get the duration of a video file in seconds using ffprobe.
+    
+    Args:
+        video_path (str): Path to the video file
+        
+    Returns:
+        float: Duration in seconds, or None if there was an error
+    """
+    try:
+        cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'json',
+            video_path
+        ]
+        print(f"\nRunning ffprobe command for: {video_path}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        print(f"ffprobe output: {result.stdout}")
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            duration = float(data['format']['duration'])
+            print(f"Video duration: {format_time(duration)}")
+            return duration
+        else:
+            print(f"Error getting video duration: {result.stderr}")
+            return None
+    except Exception as e:
+        print(f"Error getting video duration: {e}")
+        return None
+
 def create_analysis_document(video_paths):
     """
     Analyzes co-speech gestures and records the output in a Word document.
@@ -42,8 +84,6 @@ def create_analysis_document(video_paths):
     """
     if not GEMINI_API_KEY:
         print("Error: GEMINI_API_KEY environment variable not set.")
-        print("Please set it before running the script.")
-        print("Example (in terminal): export GEMINI_API_KEY='YOUR_API_KEY'")
         return
 
     try:
@@ -70,16 +110,27 @@ def create_analysis_document(video_paths):
     timestamp.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph()  # Add spacing
 
+    # Add processing times summary section
+    doc.add_heading('Processing Times Summary', level=1)
+    processing_times = []
+
     for video_path in video_paths:
         video_filename = os.path.basename(video_path)
-        print(f"Processing: {video_filename}")
+        print(f"\nProcessing: {video_filename}")
 
         if not os.path.exists(video_path):
             print(f"Error: Video file not found at '{video_path}'")
             continue
 
+        # Start timing
+        start_time = time.time()
+        print(f"Starting analysis at: {datetime.fromtimestamp(start_time).strftime('%H:%M:%S')}")
+
         # Add video section to document
-        doc.add_heading(f'Video: {video_filename}', level=1)
+        video_duration = get_video_duration(video_path)
+        duration_text = f" (Duration: {format_time(video_duration)})" if video_duration is not None else ""
+        print(f"Duration text for document: {duration_text}")
+        doc.add_heading(f'Video: {video_filename}{duration_text}', level=1)
         
         uploaded_file_resource = None
         try:
@@ -184,8 +235,40 @@ def create_analysis_document(video_paths):
                 except Exception as e:
                     print(f"Error deleting file: {e}")
             
+            # Calculate and record processing time
+            end_time = time.time()
+            processing_time = end_time - start_time
+            processing_times.append((video_filename, processing_time))
+            print(f"Processing completed at: {datetime.fromtimestamp(end_time).strftime('%H:%M:%S')}")
+            print(f"Total processing time: {format_time(processing_time)}")
+            
+            # Add processing time to the document
+            doc.add_paragraph('Processing Time:', style='Heading 3')
+            doc.add_paragraph(f'Total time: {format_time(processing_time)}')
+            
             # Add spacing between videos
             doc.add_paragraph()
+
+    # Add processing times summary at the beginning of the document
+    doc.add_heading('Processing Times Summary', level=1)
+    summary_table = doc.add_table(rows=1, cols=2)
+    summary_table.style = 'Table Grid'
+    
+    # Add headers
+    header_cells = summary_table.rows[0].cells
+    header_cells[0].text = 'Video'
+    header_cells[1].text = 'Processing Time'
+    
+    # Add data rows
+    for video_filename, processing_time in processing_times:
+        row_cells = summary_table.add_row().cells
+        row_cells[0].text = video_filename
+        row_cells[1].text = format_time(processing_time)
+    
+    # Add total processing time
+    total_time = sum(time for _, time in processing_times)
+    doc.add_paragraph(f'\nTotal processing time for all videos: {format_time(total_time)}')
+    print(f"\nTotal processing time for all videos: {format_time(total_time)}")
 
     # Save the document in the specified output directory
     output_filename = f'gesture_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
@@ -197,7 +280,7 @@ if __name__ == "__main__":
     print("Co-Speech Gesture Analysis with Word Document Output")
     print("==================================================\n")
     
-    # List of videos to analyze - Replace these with your video paths
+    # List of videos to analyze
     videos_to_analyze = [
         "path/to/video1.mp4",
         "path/to/video2.mp4",
@@ -207,4 +290,4 @@ if __name__ == "__main__":
     if videos_to_analyze:
         create_analysis_document(videos_to_analyze)
     else:
-        print("No video files specified for analysis.") 
+  print("No video files specified for analysis.") 
