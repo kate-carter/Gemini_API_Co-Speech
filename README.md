@@ -6,7 +6,7 @@ This project analyzes co-speech gestures in videos using the Google Gemini API a
 
 1. Install required packages:
 ```bash
-pip install google-generativeai python-docx
+pip install google-generativeai python-docx moviepy
 ```
 
 2. Set up your Gemini API key:
