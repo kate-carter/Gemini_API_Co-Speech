@@ -15,7 +15,13 @@ import sys
 # --- Configuration ---
 MODEL_NAME = "gemini-2.5-flash-preview-05-20"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-OUTPUT_DIR = "/path/to/output/directory"
+OUTPUT_DIR = "/Users/Kate/Documents/CWRU/RedHen/GeminiOutput"
+
+# Analysis prompt
+ANALYSIS_PROMPT = """Please analyze the co-speech gesture in this video in two sections:
+1) The action being performed (visual analysis)
+2) The co-speech gesture category the gesture belongs to (beat, deictic, iconic, etc.), with timestamps in MM:SS.MS for gesture onset.
+If a gesture is iconic or metaphoric, please provide a description or subcategory."""
 
 # Configure the model
 generation_config = {
@@ -139,7 +145,7 @@ def retry_failed_analysis(model, video_path, doc, video_filename, retry_count):
         # Prepare prompt
         prompt_parts = [
             uploaded_file_resource,
-            "Please analyze the co-speech gesture in this video in two sections: 1)The action being performed (visual analysis). 2) The co-speech gesture category the gesture belongs to (beat, deictic, iconic, etc.), with timestamps in MM:SS.MS for gesture onset. If a gesture is iconic or metaphoric, please provide a description or subcategory."
+            ANALYSIS_PROMPT
         ]
 
         # Get response
@@ -155,7 +161,7 @@ def retry_failed_analysis(model, video_path, doc, video_filename, retry_count):
             print("-------------------")
             
             # Add retry response to document
-            doc.add_paragraph(f'Retry Attempt {retry_count}:', style='Heading 4')
+            doc.add_paragraph(f'Retry Attempt {retry_count} for {video_filename}:', style='Heading 4')
             raw_para = doc.add_paragraph()
             format_text_with_bold(raw_para, response_text)
             
@@ -193,6 +199,10 @@ def create_analysis_document(video_paths):
         print("Error: GEMINI_API_KEY environment variable not set.")
         return
 
+    # Initialize request counter
+    request_count = 0
+    MAX_REQUESTS = 450
+
     # Ask for initial permission for automated retries
     while True:
         auto_retry = input("\nDo you want to automate retries? (yes/no): ").lower()
@@ -226,8 +236,7 @@ def create_analysis_document(video_paths):
     # Add timestamp
     timestamp = doc.add_paragraph(f'Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
     timestamp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_paragraph()  # Add spacing
-
+    
     # Initialize tracking variables
     processing_times = []
     video_responses = {}  # Track responses for each video
@@ -235,8 +244,14 @@ def create_analysis_document(video_paths):
     error_log = {}  # Track all failed attempts and their responses
 
     for video_path in video_paths:
+        # Check if we've reached the request limit
+        if request_count >= MAX_REQUESTS:
+            print(f"\nReached maximum request limit of {MAX_REQUESTS}. Saving current results...")
+            break
+
         video_filename = os.path.basename(video_path)
         print(f"\nProcessing: {video_filename}")
+        print(f"Current request count: {request_count}/{MAX_REQUESTS}")
 
         if not os.path.exists(video_path):
             print(f"Error: Video file not found at '{video_path}'")
@@ -262,13 +277,18 @@ def create_analysis_document(video_paths):
             # Prepare prompt
             prompt_parts = [
                 uploaded_file_resource,
-                "Please analyze the co-speech gesture in this video in two sections: 1)The action being performed (visual analysis). 2) The co-speech gesture category the gesture belongs to (beat, deictic, iconic, etc.), with timestamps in MM:SS.MS for gesture onset. If a gesture is iconic or metaphoric, please provide a description or subcategory."
+                ANALYSIS_PROMPT
             ]
 
             # Get response
             print("Analyzing gestures...")
             time.sleep(2)
             response = model.generate_content(prompt_parts)
+            request_count += 1  # Increment request counter
+            
+            # Calculate end time right after getting the response
+            end_time = time.time()
+            processing_time = end_time - start_time
             
             if response and hasattr(response, 'text'):
                 response_text = response.text
@@ -285,7 +305,7 @@ def create_analysis_document(video_paths):
                     video_responses[video_filename] = {
                         'response': response_text,
                         'duration': duration_text,
-                        'processing_time': end_time - start_time
+                        'processing_time': processing_time
                     }
                     video_retry_counts[video_filename] = 0
             else:
@@ -304,9 +324,7 @@ def create_analysis_document(video_paths):
                 except Exception as e:
                     print(f"Error deleting file: {e}")
             
-            # Calculate and record processing time
-            end_time = time.time()
-            processing_time = end_time - start_time
+            # Record processing time
             processing_times.append((video_filename, processing_time))
             print(f"Processing completed at: {datetime.fromtimestamp(end_time).strftime('%H:%M:%S')}")
             print(f"Total processing time: {format_time(processing_time)}")
@@ -315,22 +333,10 @@ def create_analysis_document(video_paths):
     # Process retries for files with errors
     retry_count = 0
     error_files = list(error_log.keys())
-    while error_files:
+    while error_files and request_count < MAX_REQUESTS:
         print(f"\nThe following files still need valid output (Attempt {retry_count + 1}):")
         for error_file in error_files:
             print(f"- {error_file}")
-        
-        # Check if we need to ask for permission (every 10 retries)
-        if retry_count > 0 and retry_count % 10 == 0:
-            while True:
-                continue_input = input(f"\nYou've reached {retry_count} retry attempts. Would you like to continue with another 10 attempts? (yes/no): ").lower()
-                if continue_input in ['yes', 'y', 'no', 'n']:
-                    break
-                print("Please enter 'yes' or 'no'.")
-            
-            if continue_input in ['no', 'n']:
-                print("Stopping retry attempts.")
-                break
         
         # Only ask for permission if automated retries are not enabled
         if auto_retry not in ['yes', 'y']:
@@ -348,9 +354,14 @@ def create_analysis_document(video_paths):
         
         # Process retries
         for error_file in error_files:
+            if request_count >= MAX_REQUESTS:
+                print(f"\nReached maximum request limit of {MAX_REQUESTS}. Saving current results...")
+                break
+
             video_path = next((path for path in video_paths if os.path.basename(path) == error_file), None)
             if video_path and os.path.exists(video_path):
                 retry_response = retry_failed_analysis(model, video_path, doc, error_file, retry_count + 1)
+                request_count += 1  # Increment request counter
                 if retry_response:
                     if re.search(r'\d{2}:\d{2}\.\d{3}', retry_response) and len(retry_response.split()) >= 50:
                         # Valid response - store in video_responses
@@ -379,6 +390,10 @@ def create_analysis_document(video_paths):
             print("\nAll files have been successfully processed!")
             break
 
+    # Add request count to document
+    doc.add_heading('Request Count', level=1)
+    doc.add_paragraph(f'Total API requests made: {request_count}/{MAX_REQUESTS}')
+
     # Add successful analyses in alphabetical order
     if video_responses:
         doc.add_heading('Successful Analyses', level=1)
@@ -390,17 +405,19 @@ def create_analysis_document(video_paths):
             format_text_with_bold(raw_para, response_data['response'])
             doc.add_paragraph('Processing Time:', style='Heading 3')
             doc.add_paragraph(f'Total time: {format_time(response_data["processing_time"])}')
-            doc.add_paragraph()  # Add spacing
+            doc.add_paragraph()  # Single spacing between videos
 
     # Add error log section
-    doc.add_heading('Error Log', level=1)
-    # Sort error log entries by filename
-    sorted_error_log = sorted(error_log.items(), key=lambda x: x[0])
-    for filename, attempts in sorted_error_log:
-        if filename not in video_responses:  # Only show files that never succeeded
-            doc.add_heading(f'File: {filename}', level=2)
-            for attempt in attempts:
-                doc.add_paragraph(attempt)
+    if error_log:  # Only add error log section if there are errors
+        doc.add_heading('Error Log', level=1)
+        # Sort error log entries by filename
+        sorted_error_log = sorted(error_log.items(), key=lambda x: x[0])
+        for filename, attempts in sorted_error_log:
+            if filename not in video_responses:  # Only show files that never succeeded
+                doc.add_heading(f'File: {filename}', level=2)
+                for attempt in attempts:
+                    doc.add_paragraph(attempt)
+                doc.add_paragraph()  # Single spacing between error entries
 
     # Add processing times summary
     doc.add_heading('Processing Times Summary', level=1)
@@ -430,15 +447,15 @@ def create_analysis_document(video_paths):
     print(f"\nTotal processing time for all videos: {format_time(total_time)}")
 
     # Save the document
-    output_filename = f'2.5_520_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
+    output_filename = f'2.5_520_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}_requests_{request_count}.docx'
     output_path = os.path.join(OUTPUT_DIR, output_filename)
     doc.save(output_path)
     print(f"\nAnalysis saved to: {output_path}")
-    
+
 def signal_handler(sig, frame):
     print("\n\nInterrupted by user. Saving current results...")
     if 'doc' in globals():
-        # Save the document with current results if process is interrupted
+        # Save the document with current results
         output_filename = f'2.5_520_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}_interrupted.docx'
         output_path = os.path.join(OUTPUT_DIR, output_filename)
         doc.save(output_path)
@@ -449,13 +466,14 @@ if __name__ == "__main__":
     # Set up signal handler for Ctrl+C
     signal.signal(signal.SIGINT, signal_handler)
     
-    print("Co-Speech Gesture Analysis with Word Document Output (Gemini 2.5 Pro Preview 5/20)")
+    print("Co-Speech Gesture Analysis with Word Document Output (Gemini 2.5 Pro Vision)")
     print("==================================================\n")
     
     # List of videos to analyze
     videos_to_analyze = [
-       "/path/to/video1.mp4",
-        "/path/to/video2.mp4"
+        "/path/to/input/video1.mp4",
+        "/path/to/input/video2.mp4",
+        "/path/to/input/video3.mp4",
     ]
 
     if videos_to_analyze:
