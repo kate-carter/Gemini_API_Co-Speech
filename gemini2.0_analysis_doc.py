@@ -1,18 +1,45 @@
+import google.generativeai as genai
+import os
+import time
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from datetime import datetime
+import re
+import subprocess
+import json
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # --- Configuration ---
 MODEL_NAME = "gemini-2.0-flash-001"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-OUTPUT_DIR = "/Users/Kate/Documents/CWRU/RedHen/GeminiOutput"
+OUTPUT_DIR = "/path/to/output/directory"
+
+# Configure the model
+generation_config = {
+    "temperature": 0.4,  # Lower temperature for more focused responses
+    "top_p": 0.95,      # Higher top_p for more reliable outputs
+    "top_k": 32,        # Adjusted for flash model
+    "max_output_tokens": 1024,  # Reduced for faster processing
+}
+
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+}
 
 def format_text_with_bold(paragraph, text):
     """
-    Format text with bold sections where text is surrounded by **asterisks**.
+    Format text with bold sections where text is surrounded by **asterisks** and
+    italic sections where text is surrounded by *asterisks*.
     
     Args:
         paragraph: The paragraph object to add text to
         text: The text to format
     """
-    # Split the text by ** markers
+    # First split by bold markers
     parts = re.split(r'(\*\*.*?\*\*)', text)
     
     for part in parts:
@@ -22,8 +49,17 @@ def format_text_with_bold(paragraph, text):
             run = paragraph.add_run(bold_text)
             run.bold = True
         else:
-            # Add as normal text
-            paragraph.add_run(part)
+            # Split the non-bold part by italic markers
+            italic_parts = re.split(r'(\*.*?\*)', part)
+            for italic_part in italic_parts:
+                if italic_part.startswith('*') and italic_part.endswith('*'):
+                    # Remove asterisks and add as italic
+                    italic_text = italic_part[1:-1]
+                    run = paragraph.add_run(italic_text)
+                    run.italic = True
+                else:
+                    # Add as normal text
+                    paragraph.add_run(italic_part)
 
 def format_time(seconds):
     """
@@ -89,7 +125,11 @@ def create_analysis_document(video_paths):
     try:
         # Configure Gemini
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel(MODEL_NAME)
+        model = genai.GenerativeModel(
+            model_name=MODEL_NAME,
+            generation_config=generation_config,
+            safety_settings=safety_settings
+        )
         print(f"Successfully initialized Gemini client with model: {MODEL_NAME}\n")
     except Exception as e:
         print(f"Error initializing Gemini client: {e}")
@@ -142,7 +182,9 @@ def create_analysis_document(video_paths):
             # Prepare prompt
             prompt_parts = [
                 uploaded_file_resource,
-                "Using linguistic terminology, can you classify the co-speech gesture in this clip in two sections: 1) the action being performed, and 2) the co speech gesture category the gesture belongs to?"
+                """Please analyze the co-speech gesture in this video in two sections:
+1) The action being performed (visual analysis)
+2) The co-speech gesture category the gesture belongs to (beat, deictic, iconic, etc.)"""
             ]
 
             # Get response
@@ -282,12 +324,13 @@ if __name__ == "__main__":
     
     # List of videos to analyze
     videos_to_analyze = [
-        "path/to/video1.mp4",
-        "path/to/video2.mp4",
-        "path/to/video3.mp4"
+        "/path/to/input/video1.mp4",
+        "/path/to/input/video2.mp4",
+        "/path/to/input/video3.mp4",
+        
     ]
 
     if videos_to_analyze:
         create_analysis_document(videos_to_analyze)
     else:
-  print("No video files specified for analysis.") 
+        print("No video files specified for analysis.")
