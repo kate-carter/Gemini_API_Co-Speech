@@ -13,7 +13,7 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 # --- Configuration ---
 MODEL_NAME = "gemini-2.0-flash-001"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-OUTPUT_DIR = "/path/to/output/directory"
+OUTPUT_DIR = "/Users/Kate/Documents/CWRU/RedHen/GeminiOutput"
 
 # Configure the model
 generation_config = {
@@ -327,10 +327,9 @@ if __name__ == "__main__":
         "/path/to/input/video1.mp4",
         "/path/to/input/video2.mp4",
         "/path/to/input/video3.mp4",
-        
     ]
 
     if videos_to_analyze:
         create_analysis_document(videos_to_analyze)
     else:
-        print("No video files specified for analysis.")
+        print("No video files specified for analysis.") 
