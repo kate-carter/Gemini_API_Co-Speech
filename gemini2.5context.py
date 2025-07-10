@@ -51,13 +51,14 @@ def setup_logging(use_timestamped_logs):
 # --- Configuration ---
 MODEL_NAME = "gemini-2.5-flash-preview-05-20"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-OUTPUT_DIR = "/path/to/output/directory"
-CONTEXT_PDF = "/path/to/context/pdf"
+OUTPUT_DIR = "/Users/Kate/Documents/CWRU/RedHen/GeminiOutput"
+CONTEXT_PDF = "/Users/Kate/Documents/CWRU/RedHen/Relevant Studies/McNeill_CH3_PS.pdf"
 
 # Analysis prompt
 ANALYSIS_PROMPT = """Please analyze the co-speech gesture in this video in two sections:
 1) The action being performed (visual analysis)
-2) The co-speech gesture category the gesture belongs to (beat, deictic, iconic, etc.), with timestamps in MM:SS.MS for gesture onset.
+2) The co-speech gesture category the gesture belongs to (beat, deictic, iconic, etc.), 
+with timestamps in MM:SS.MS for gesture onset.
 If a gesture is iconic or metaphoric, please provide a description or subcategory."""
 
 # Configure the model
@@ -66,6 +67,7 @@ generation_config = {
     "top_p": 0.95,      # Higher top_p for more reliable outputs
     "top_k": 32,        # Adjusted for vision model
     "max_output_tokens": 1024,  # Reduced for faster processing
+    # "candidate_count": 1,  # Single candidate to avoid safety filtering issues - uncomment if needed
 }
 
 safety_settings = {
@@ -74,6 +76,30 @@ safety_settings = {
     HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
 }
+
+# Alternative safety settings format if still getting blocked:
+# safety_settings = [
+#     {
+#         "category": "HARM_CATEGORY_HARASSMENT",
+#         "threshold": "BLOCK_NONE"
+#     },
+#     {
+#         "category": "HARM_CATEGORY_HATE_SPEECH", 
+#         "threshold": "BLOCK_NONE"
+#     },
+#     {
+#         "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+#         "threshold": "BLOCK_NONE"
+#     },
+#     {
+#         "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+#         "threshold": "BLOCK_NONE"
+#     },
+#     {
+#         "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+#         "threshold": "BLOCK_NONE"
+#     }
+# ]
 
 def format_text_with_bold(paragraph, text):
     """
@@ -178,7 +204,7 @@ def retry_failed_analysis(model, video_path, doc, video_filename, retry_count):
         retry_count: Current retry attempt number
         
     Returns:
-        str: The response text if successful, None if failed
+        tuple: (response_text, processing_time) if successful, (None, 0) if failed
     """
     logging.info(f"Retrying analysis for: {video_filename} (Attempt {retry_count})")
     uploaded_file_resource = None
@@ -218,14 +244,14 @@ def retry_failed_analysis(model, video_path, doc, video_filename, retry_count):
             processing_time = end_time - start_time
             doc.add_paragraph(f'Processing Time: {format_time(processing_time)}', style='Heading 4')
             
-            return response_text
+            return response_text, processing_time
         else:
-            logging.warning("No analysis received from Gemini in retry attempt.")
-            return None
+            logging.warning(f"No text content in response for '{video_filename}'")
+            return None, 0
 
     except Exception as e:
         logging.error(f"Error during retry for '{video_filename}': {e}")
-        return None
+        return None, 0
 
     finally:
         # Clean up uploaded file
@@ -249,7 +275,7 @@ def create_analysis_document(video_paths):
 
     # Initialize request counter
     request_count = 0
-    MAX_REQUESTS = 450
+    MAX_REQUESTS = 50
     doc = None  # Initialize doc variable at the start
 
     try:
@@ -293,6 +319,7 @@ def create_analysis_document(video_paths):
         video_responses = {}  # Track responses for each video
         video_retry_counts = {}  # Track number of retries per video
         error_log = {}  # Track all failed attempts and their responses
+        successful_processing_times = {}  # Track processing times for successful attempts only
 
         # Upload context PDF if it exists
         context_resource = None
@@ -368,9 +395,14 @@ def create_analysis_document(video_paths):
                     logging.info(response_text[:100] + "..." if len(response_text) > 100 else response_text)
                     logging.info("-------------------")
                     
-                    # Check if response is valid (has timestamps and sufficient length)
-                    if not re.search(r'\d{2}:\d{2}\.\d{3}', response_text) or len(response_text.split()) < 50:
+                    # Check if response is valid (has timestamps, sufficient length, and gesture types)
+                    has_timestamps = bool(re.search(r'\d{2}:\d{2}\.\d{3}', response_text))
+                    has_sufficient_length = len(response_text.split()) >= 50
+                    has_gesture_types = any(token.lower() in response_text.lower() for token in ["beat", "metaphoric", "iconic", "deictic"])
+                    
+                    if not has_timestamps or not has_sufficient_length or not has_gesture_types:
                         error_log[video_filename] = [f"Initial attempt: {response_text}"]
+                        logging.warning(f"Invalid response for {video_filename} - will retry (timestamps: {has_timestamps}, length: {has_sufficient_length}, gesture types: {has_gesture_types})")
                     else:
                         # Only store in video_responses if response is valid
                         video_responses[video_filename] = {
@@ -379,6 +411,7 @@ def create_analysis_document(video_paths):
                             'processing_time': processing_time
                         }
                         video_retry_counts[video_filename] = 0
+                        successful_processing_times[video_filename] = processing_time
                 else:
                     error_log[video_filename] = ["No response received from Gemini"]
 
@@ -404,8 +437,9 @@ def create_analysis_document(video_paths):
 
         # Process retries for files with errors
         retry_count = 0
+        MAX_RETRIES = 5  # Maximum number of retry attempts per video
         error_files = list(error_log.keys())
-        while error_files and request_count < MAX_REQUESTS:
+        while error_files and request_count < MAX_REQUESTS and retry_count < MAX_RETRIES:
             logging.info(f"The following files still need valid output (Attempt {retry_count + 1}):")
             for error_file in error_files:
                 logging.info(f"- {error_file}")
@@ -433,19 +467,24 @@ def create_analysis_document(video_paths):
 
                 video_path = next((path for path in video_paths if os.path.basename(path) == error_file), None)
                 if video_path and os.path.exists(video_path):
-                    retry_response = retry_failed_analysis(model, video_path, doc, error_file, retry_count + 1)
+                    retry_response, retry_processing_time = retry_failed_analysis(model, video_path, doc, error_file, retry_count + 1)
                     request_count += 1  # Increment request counter
                     if retry_response:
-                        if re.search(r'\d{2}:\d{2}\.\d{3}', retry_response) and len(retry_response.split()) >= 50:
+                        has_timestamps = bool(re.search(r'\d{2}:\d{2}\.\d{3}', retry_response))
+                        has_sufficient_length = len(retry_response.split()) >= 50
+                        has_gesture_types = any(token.lower() in retry_response.lower() for token in ["beat", "metaphoric", "iconic", "deictic"])
+                        
+                        if has_timestamps and has_sufficient_length and has_gesture_types:
                             # Valid response - store in video_responses
                             video_duration = get_video_duration(video_path)
                             duration_text = f" (Duration: {format_time(video_duration)})" if video_duration is not None else ""
                             video_responses[error_file] = {
                                 'response': retry_response,
                                 'duration': duration_text,
-                                'processing_time': time.time() - start_time
+                                'processing_time': retry_processing_time
                             }
                             video_retry_counts[error_file] = retry_count + 1
+                            successful_processing_times[error_file] = retry_processing_time
                             logging.info(f"Successfully retried analysis for {error_file}")
                         else:
                             # Invalid response - add to error log
@@ -462,6 +501,13 @@ def create_analysis_document(video_paths):
             if not error_files:
                 logging.info("All files have been successfully processed!")
                 break
+        
+        # Check if we stopped due to retry limit
+        if retry_count >= MAX_RETRIES and error_files:
+            logging.warning(f"Reached maximum retry limit of {MAX_RETRIES} attempts. The following files could not be processed:")
+            for error_file in error_files:
+                logging.warning(f"- {error_file}")
+            logging.warning("These files will be included in the error log section of the document.")
 
         # Add request count to document
         doc.add_heading('Request Count', level=1)
@@ -503,19 +549,20 @@ def create_analysis_document(video_paths):
         header_cells[1].text = 'Processing Time'
         header_cells[2].text = 'Retry Attempts'
         
-        # Sort processing times by filename
-        sorted_processing_times = sorted(processing_times, key=lambda x: x[0])
+        # Sort processing times by filename, but use successful processing times for display
+        sorted_video_names = sorted(successful_processing_times.keys())
         
         # Add data rows
-        for video_filename, processing_time in sorted_processing_times:
+        for video_filename in sorted_video_names:
+            processing_time = successful_processing_times[video_filename]
             row_cells = summary_table.add_row().cells
             row_cells[0].text = video_filename
             row_cells[1].text = format_time(processing_time)
             retries = video_retry_counts.get(video_filename, 0)
-            row_cells[2].text = str(retries) if retries > 0 else "None"
+            row_cells[2].text = str(retries)
         
-        # Add total processing time
-        total_time = sum(time for _, time in processing_times)
+        # Add total processing time (only for successful attempts)
+        total_time = sum(successful_processing_times.values())
         doc.add_paragraph(f'\nTotal processing time for all videos: {format_time(total_time)}')
         logging.info(f"Total processing time for all videos: {format_time(total_time)}")
 
@@ -546,22 +593,9 @@ def signal_handler(sig, frame):
     Handle interruption signals (Ctrl+C) and ensure document save prompt.
     """
     logging.warning("Interrupted by user. Saving current results...")
-    if 'doc' in globals() and doc is not None:
-        # Ask user if they want to save the document
-        while True:
-            save_doc = input("\nDo you want to save the current analysis document? (yes/no): ").lower()
-            if save_doc in ['yes', 'y', 'no', 'n']:
-                break
-            logging.warning("Please enter 'yes' or 'no'.")
-
-        if save_doc in ['yes', 'y']:
-            # Save the document with current results
-            output_filename = f'2.5_context_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}_interrupted.docx'
-            output_path = os.path.join(OUTPUT_DIR, output_filename)
-            doc.save(output_path)
-            logging.info(f"Analysis saved to: {output_path}")
-        else:
-            logging.info("Analysis document not saved.")
+    # Note: doc variable is not accessible in signal handler scope
+    # This is a limitation of signal handlers in Python
+    logging.warning("Cannot save document from signal handler - please use Ctrl+C to stop gracefully")
     sys.exit(0)
 
 if __name__ == "__main__":
@@ -584,9 +618,9 @@ if __name__ == "__main__":
         
         # List of videos to analyze
         videos_to_analyze = [
-            "/path/to/input/video1.mp4",
-        "/path/to/input/video2.mp4",
-        "/path/to/input/video3.mp4",
+            "/Users/Kate/Documents/CWRU/RedHen/fulldatasetellen/30videos_genai/11-26-9.mp4",
+            "/Users/Kate/Documents/CWRU/RedHen/fulldatasetellen/30videos_genai/11-29-1-3.mp4",
+            "/Users/Kate/Documents/CWRU/RedHen/fulldatasetellen/30videos_genai/11-20-1-7.mp4",
         ]
 
         if videos_to_analyze:
@@ -595,4 +629,4 @@ if __name__ == "__main__":
             logging.warning("No video files specified for analysis.")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
-        sys.exit(1) 
+        sys.exit(1)
