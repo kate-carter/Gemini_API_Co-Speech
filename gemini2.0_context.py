@@ -176,6 +176,9 @@ def create_analysis_document(video_paths):
         logging.error("GEMINI_API_KEY environment variable not set.")
         return
 
+    # Initialize request counter and limit
+    request_count = 0
+    MAX_REQUESTS = 175
     doc = None  # Initialize doc variable at the start
 
     try:
@@ -186,7 +189,9 @@ def create_analysis_document(video_paths):
             generation_config=generation_config,
             safety_settings=safety_settings
         )
-        logging.info(f"Successfully initialized Gemini client with model: {MODEL_NAME}\n")
+        logging.info(f"Successfully initialized Gemini client with model: {MODEL_NAME}")
+        logging.info(f"Model call limit set to: {MAX_REQUESTS}")
+        logging.info("")  # Add blank line for readability
 
         # Create output directory if it doesn't exist
         os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -218,8 +223,14 @@ def create_analysis_document(video_paths):
                 logging.error(f"Error uploading context PDF: {e}")
 
         for video_path in video_paths:
+            # Check if we've reached the request limit
+            if request_count >= MAX_REQUESTS:
+                logging.warning(f"Reached maximum request limit of {MAX_REQUESTS}. Saving current results...")
+                break
+
             video_filename = os.path.basename(video_path)
             logging.info(f"Processing: {video_filename}")
+            logging.info(f"Current request count: {request_count}/{MAX_REQUESTS}")
             logging.info("")  # Add blank line for readability
 
             if not os.path.exists(video_path):
@@ -238,6 +249,7 @@ def create_analysis_document(video_paths):
             doc.add_heading(f'Video: {video_filename}{duration_text}', level=1)
             
             uploaded_file_resource = None
+            processing_time = 0  # Initialize processing time
             try:
                 # Upload video
                 logging.info(f"Uploading '{video_filename}'...")
@@ -262,6 +274,11 @@ def create_analysis_document(video_paths):
                 logging.info("Analyzing gestures...")
                 time.sleep(2)
                 response = model.generate_content(prompt_parts)
+                request_count += 1  # Increment request counter
+                
+                # Calculate processing time right after getting the response
+                end_time = time.time()
+                processing_time = end_time - start_time
 
                 if response.parts:
                     # Parse and format the response
@@ -323,19 +340,39 @@ def create_analysis_document(video_paths):
                         category_para = doc.add_paragraph()
                         format_text_with_bold(category_para, category)
                         
+                        # Add processing time to document
+                        doc.add_paragraph('Processing Time:', style='Heading 3')
+                        doc.add_paragraph(f'Total time: {format_time(processing_time)}')
+                        
                     except Exception as e:
                         logging.error(f"Error parsing response: {e}")
                         # If parsing fails, add the raw response
                         doc.add_paragraph('Raw Analysis:', style='Heading 3')
                         raw_para = doc.add_paragraph()
                         format_text_with_bold(raw_para, response_text)
+                        
+                        # Add processing time to document even for raw analysis
+                        doc.add_paragraph('Processing Time:', style='Heading 3')
+                        doc.add_paragraph(f'Total time: {format_time(processing_time)}')
                 else:
                     logging.warning("No response received from Gemini")
                     doc.add_paragraph('No analysis received from Gemini.', style='Heading 3')
+                    
+                    # Add processing time to document even for failed analysis
+                    doc.add_paragraph('Processing Time:', style='Heading 3')
+                    doc.add_paragraph(f'Total time: {format_time(processing_time)}')
 
             except Exception as e:
                 logging.error(f"Error processing video: {e}")
                 doc.add_paragraph(f'Error analyzing video: {str(e)}', style='Heading 3')
+                
+                # Calculate processing time even for errors
+                end_time = time.time()
+                processing_time = end_time - start_time
+                
+                # Add processing time to document even for errors
+                doc.add_paragraph('Processing Time:', style='Heading 3')
+                doc.add_paragraph(f'Total time: {format_time(processing_time)}')
 
             finally:
                 # Clean up uploaded file
@@ -346,14 +383,35 @@ def create_analysis_document(video_paths):
                     except Exception as e:
                         logging.error(f"Error deleting file: {e}")
                 
-                # Record processing time
-                end_time = time.time()
-                processing_time = end_time - start_time
+                # Record processing time for summary
                 processing_times.append((video_filename, processing_time))
                 logging.info(f"Processing completed at: {datetime.fromtimestamp(end_time).strftime('%H:%M:%S')}")
-                logging.info(f"Total processing time: {format_time(processing_time)}")
+                logging.info(f"Processing time for '{video_filename}': {format_time(processing_time)}")
                 logging.info("")  # Add blank line after processing
                 doc.add_paragraph()  # Add spacing
+
+        # Add request count to document
+        doc.add_heading('Request Count', level=1)
+        doc.add_paragraph(f'Total API requests made: {request_count}/{MAX_REQUESTS}')
+
+        # Add processing times summary table
+        if processing_times:
+            summary_table = doc.add_table(rows=1, cols=2)
+            summary_table.style = 'Table Grid'
+            
+            # Add headers
+            header_cells = summary_table.rows[0].cells
+            header_cells[0].text = 'Video'
+            header_cells[1].text = 'Processing Time'
+            
+            # Sort processing times by filename
+            sorted_processing_times = sorted(processing_times, key=lambda x: x[0])
+            
+            # Add data rows
+            for video_filename, processing_time in sorted_processing_times:
+                row_cells = summary_table.add_row().cells
+                row_cells[0].text = video_filename
+                row_cells[1].text = format_time(processing_time)
 
         # Add total processing time
         total_time = sum(time for _, time in processing_times)
@@ -375,7 +433,7 @@ def create_analysis_document(video_paths):
 
             if save_doc in ['yes', 'y']:
                 # Save the document
-                output_filename = f'2.0_context_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
+                output_filename = f'2.0_context_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}_requests_{request_count}.docx'
                 output_path = os.path.join(OUTPUT_DIR, output_filename)
                 doc.save(output_path)
                 logging.info(f"Analysis saved to: {output_path}")
@@ -387,22 +445,9 @@ def signal_handler(sig, frame):
     Handle interruption signals (Ctrl+C) and ensure document save prompt.
     """
     logging.warning("Interrupted by user. Saving current results...")
-    if 'doc' in globals() and doc is not None:
-        # Ask user if they want to save the document
-        while True:
-            save_doc = input("\nDo you want to save the current analysis document? (yes/no): ").lower()
-            if save_doc in ['yes', 'y', 'no', 'n']:
-                break
-            logging.warning("Please enter 'yes' or 'no'.")
-
-        if save_doc in ['yes', 'y']:
-            # Save the document with current results
-            output_filename = f'2.0_context_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}_interrupted.docx'
-            output_path = os.path.join(OUTPUT_DIR, output_filename)
-            doc.save(output_path)
-            logging.info(f"Analysis saved to: {output_path}")
-        else:
-            logging.info("Analysis document not saved.")
+    # Note: doc variable is not accessible in signal handler scope
+    # This is a limitation of signal handlers in Python
+    logging.warning("Cannot save document from signal handler - please use Ctrl+C to stop gracefully")
     sys.exit(0)
 
 if __name__ == "__main__":
