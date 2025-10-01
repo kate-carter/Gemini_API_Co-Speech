@@ -51,8 +51,8 @@ def setup_logging(use_timestamped_logs):
 # --- Configuration ---
 MODEL_NAME = "gemini-2.0-flash-001"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-OUTPUT_DIR = "/Users/Kate/Documents/CWRU/RedHen/GeminiOutput"
-CONTEXT_PDF = "/Users/Kate/Documents/CWRU/RedHen/gemini_context/McNeill_CH3_PS.pdf"
+OUTPUT_DIR = "/path/to/outputdirectory"
+CONTEXT_PDF = "path/to/context/document/word/or/pdf"
 
 # Analysis prompt
 ANALYSIS_PROMPT = """Please analyze the co-speech gesture in this video in two sections:
