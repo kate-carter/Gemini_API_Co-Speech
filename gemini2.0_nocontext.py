@@ -9,11 +9,16 @@ import re
 import subprocess
 import json
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
+import signal
+import sys
+import logging
+from logging.handlers import RotatingFileHandler
+import traceback
 
 # --- Configuration ---
 MODEL_NAME = "gemini-2.0-flash-001"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-OUTPUT_DIR = "/Users/Kate/Documents/CWRU/RedHen/GeminiOutput"
+OUTPUT_DIR = "/path/to/output/directory"
 
 # Configure the model
 generation_config = {
@@ -326,10 +331,11 @@ if __name__ == "__main__":
     videos_to_analyze = [
         "/path/to/input/video1.mp4",
         "/path/to/input/video2.mp4",
-        "/path/to/input/video3.mp4",
+        "/path/to/input/video3.mp4"
     ]
 
     if videos_to_analyze:
         create_analysis_document(videos_to_analyze)
     else:
         print("No video files specified for analysis.") 
+
