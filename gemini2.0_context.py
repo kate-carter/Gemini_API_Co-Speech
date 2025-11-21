@@ -13,6 +13,7 @@ import signal
 import sys
 import logging
 from logging.handlers import RotatingFileHandler
+import traceback
 
 # Configure logging based on user preference
 def setup_logging(use_timestamped_logs):
@@ -51,8 +52,8 @@ def setup_logging(use_timestamped_logs):
 # --- Configuration ---
 MODEL_NAME = "gemini-2.0-flash-001"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-OUTPUT_DIR = "/path/to/outputdirectory"
-CONTEXT_PDF = "path/to/context/document/word/or/pdf"
+OUTPUT_DIR = "/path/to/output/directory"
+CONTEXT_PDF = "/path/to/context/document"
 
 # Analysis prompt
 ANALYSIS_PROMPT = """Please analyze the co-speech gesture in this video in two sections:
@@ -420,6 +421,7 @@ def create_analysis_document(video_paths):
 
     except Exception as e:
         logging.error(f"An error occurred during processing: {e}")
+        logging.error(f"Full traceback:\n{traceback.format_exc()}")
         raise  # Re-raise the exception to be caught by the outer try-finally
 
     finally:
@@ -472,7 +474,7 @@ if __name__ == "__main__":
         videos_to_analyze = [
         "/path/to/input/video1.mp4",
         "/path/to/input/video2.mp4",
-        "/path/to/input/video3.mp4",
+        "/path/to/input/video3.mp4"
         ]
 
         if videos_to_analyze:
@@ -481,4 +483,6 @@ if __name__ == "__main__":
             logging.warning("No video files specified for analysis.")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
+        logging.error(f"Full traceback:\n{traceback.format_exc()}")
         sys.exit(1)
+
