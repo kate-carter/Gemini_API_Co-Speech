@@ -1,3 +1,13 @@
-google-generativeai>=0.3.0
-python-docx>=0.8.11 
-ffmpeg-python>=0.2.0  # Optional, but helpful for ffprobe integration
+# Requirements for Gemini API Co-Speech Gesture Analysis
+# Python Version: 3.10.9 (Anaconda recommended)
+# Last Updated: November 2024
+
+# Google Generative AI SDK for Gemini models
+google-generativeai==0.8.5
+
+# Microsoft Word document creation
+python-docx==1.2.0
+
+# FFmpeg integration for video duration extraction
+# Note: Requires ffprobe to be installed on the system (comes with FFmpeg)
+ffmpeg-python==0.2.0
