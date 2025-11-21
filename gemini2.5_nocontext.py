@@ -49,10 +49,9 @@ def setup_logging(use_timestamped_logs):
     root_logger.addHandler(console_handler)
 
 # --- Configuration ---
-MODEL_NAME = "gemini-2.5-flash-preview-05-20"
+MODEL_NAME = "gemini-2.5-flash"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 OUTPUT_DIR = "/path/to/output/directory"
-CONTEXT_PDF = "/path/to/context/word/or/pdf"
 
 # Analysis prompt
 ANALYSIS_PROMPT = """Please analyze the co-speech gesture in this video in two sections:
@@ -558,7 +557,7 @@ def create_analysis_document(video_paths):
 
             if save_doc in ['yes', 'y']:
                 # Save the document
-                output_filename = f'pro2.5_NC_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}_requests_{request_count}.docx'
+                output_filename = f'2.5flash_NC_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}_requests_{request_count}.docx'
                 output_path = os.path.join(OUTPUT_DIR, output_filename)
                 doc.save(output_path)
                 logging.info(f"Analysis saved to: {output_path}")
@@ -597,7 +596,7 @@ if __name__ == "__main__":
         videos_to_analyze = [
         "/path/to/input/video1.mp4",
         "/path/to/input/video2.mp4",
-        "/path/to/input/video3.mp4",
+        "/path/to/input/video3.mp4"
         ]
 
         if videos_to_analyze:
