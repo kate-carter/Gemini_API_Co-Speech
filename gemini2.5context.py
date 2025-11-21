@@ -49,10 +49,11 @@ def setup_logging(use_timestamped_logs):
     root_logger.addHandler(console_handler)
 
 # --- Configuration ---
-MODEL_NAME = "gemini-2.5-flash-preview-05-20"
+MODEL_NAME = "gemini-2.5-flash"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 OUTPUT_DIR = "/path/to/output/directory"
-CONTEXT_PDF = "/path/to/context/pdf/or/word/document"
+CONTEXT_PDF = "/path/to/context/document"
+
 
 # Analysis prompt
 ANALYSIS_PROMPT = """Please analyze the co-speech gesture in this video in two sections:
@@ -618,9 +619,9 @@ if __name__ == "__main__":
         
         # List of videos to analyze
         videos_to_analyze = [
-            "/path/to/input/video1.mp4",
-            "/path/to/input/video2.mp4",
-            "/path/to/input/video3.mp4",
+        "/path/to/input/video1.mp4",
+        "/path/to/input/video2.mp4",
+        "/path/to/input/video3.mp4"
         ]
 
         if videos_to_analyze:
@@ -630,3 +631,4 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
         sys.exit(1)
+
